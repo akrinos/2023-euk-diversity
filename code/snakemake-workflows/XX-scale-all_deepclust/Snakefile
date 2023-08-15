@@ -1,0 +1,305 @@
+import os
+import glob
+import pandas as pd
+import numpy as np
+
+OUTPUTDIR="deepclust-workflow"
+
+mmetsp_ids = [curr.split("/")[-1].split("_")[0] for curr in glob.glob("/vortexfs1/omics/alexander/data/mmetsp/*_clean.fasta")]
+print(mmetsp_ids,flush=True)
+rule all:
+    input:
+        deepclust_contig = os.path.join(OUTPUTDIR,"deepclust_contigname.out"),
+        protein_db_out = os.path.join(OUTPUTDIR,"pep_diamond_matches","hits-db.set.tsv"),
+        protein_types_out = os.path.join(OUTPUTDIR,"pep_diamond_matches","hits-types.set.tsv"),
+        protein_types_db = os.path.join(OUTPUTDIR,"deepclust_representatives.count"),
+        deepclust_mad = os.path.join(OUTPUTDIR,"deepclust_contigname.mad.out"),
+        deepclust_mad_lowcover = os.path.join(OUTPUTDIR,"deepclust_contigname.mad.20.out"),
+        deepclust_mad_midcover = os.path.join(OUTPUTDIR,"deepclust_contigname.mad.50.10.out"),
+        deepclust_mad_verylowcover = os.path.join(OUTPUTDIR,"deepclust_contigname.mad.001.out"),
+        deepclust_phaeo = os.path.join(OUTPUTDIR,"deepclust_phaeo_marmmetsp.out"),
+        #deepclust_phaeo_only  = os.path.join(OUTPUTDIR,"deepclust_phaeo_only.out"),
+        deepclust_phaeo_only_50  = os.path.join(OUTPUTDIR,"deepclust_phaeo_only.50.out"),
+        deepclust_phaeo_only_20  = os.path.join(OUTPUTDIR,"deepclust_phaeo_only.20.out"), 
+        deepclust_sample_phaeo = os.path.join(OUTPUTDIR,"deepclust_phaeo_SO-all-SRF-0.8-5.00.only.20.out"),
+        deepclust_sample_phaeo_all = os.path.join(OUTPUTDIR,"deepclust_phaeo_SO-all-SRF-0.8-5.00.all.20.out"),
+        outfasta = os.path.join(OUTPUTDIR, "mmseqs_cluster", "mad_mmetsp.fasta"),
+        marmmetsp_nt_clust = os.path.join(OUTPUTDIR, "mmseqs_cluster_nt", "mad_marmmetsp.tsv")
+
+rule diamond_deepclust:
+    input:
+        marmmetsp = os.path.join("/vortexfs1","omics","alexander","data",
+                                 "databases","marmmetsp-5Dec2022","reference.pep.fa")
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust.out")
+    shell:
+        """
+        ./diamond deepclust -d {input.marmmetsp} -o {output.deepclust}
+        """
+#/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa
+
+rule diamond_phaeo_combined:
+    input:
+        marphaeommetsp = "../../../output/tara-eukulele-mapping/EUKulele_databases/marmmetsp_all_phaeo/reference.pep.fa"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_phaeo_marmmetsp.out")
+    shell:
+        """
+        ./diamond deepclust -d {input.marphaeommetsp} -o {output.deepclust} --member-cover 20
+        """
+        
+
+rule diamond_phaeo_only:
+    input:
+        marphaeommetsp = "../../../output/tara-eukulele-mapping/EUKulele_databases/marmmetsp_all_phaeo/reference.pep.fa"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_phaeo_only.{coverage}.out")
+    params:
+        cov="{coverage}"
+    shell:
+        """
+        temp_file="phaeo_only_db"
+        cat {input.marphaeommetsp} | grep "/SOURCE_ID=P_" > $temp_file
+        ./diamond deepclust -d $temp_file -o {output.deepclust} --member-cover {params.cov}
+        """
+        
+rule diamond_phaeo_tara:
+    input:
+        tara_file = "/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/{tara_assembly_name}/proteins.faa",
+        marphaeommetsp = "../../../output/tara-eukulele-mapping/EUKulele_databases/marmmetsp_all_phaeo/reference.pep.fa"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_phaeo_{tara_assembly_name}.only.{coverage}.out")
+    params:
+        cov="{coverage}",
+        tara="{tara_assembly_name}"
+    shell:
+        """
+        temp_file="phaeo_{params.tara}_{params.cov}"
+        cat {input.marphaeommetsp} | grep "/SOURCE_ID=P_" > $temp_file
+        cat {input.tara_file} >> $temp_file
+        ./diamond deepclust -d $temp_file -o {output.deepclust} --member-cover {params.cov}
+        """
+
+rule diamond_phaeo_tara_all:
+    input:
+        tara_file = "/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/{tara_assembly_name}/proteins.faa",
+        marphaeommetsp = "../../../output/tara-eukulele-mapping/EUKulele_databases/marmmetsp_all_phaeo/reference.pep.fa"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_phaeo_{tara_assembly_name}.all.{coverage}.out")
+    params:
+        cov="{coverage}",
+        tara="{tara_assembly_name}"
+    shell:
+        """
+        temp_file="phaeo_{params.tara}_{params.cov}"
+        cat {input.marphaeommetsp} > $temp_file
+        cat {input.tara_file} >> $temp_file
+        ./diamond deepclust -d $temp_file -o {output.deepclust} --member-cover {params.cov}
+        """
+        
+rule diamond_deepclust_withorigin:
+    input:
+        marmmetsp = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_contigname.out")
+    shell:
+        """
+        ./diamond deepclust -d {input.marmmetsp} -o {output.deepclust}
+        """
+
+rule diamond_deepclust_withorigin_mad_20:
+    input:
+        marmmetsp = mmetsp_ids,
+        mad = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_narragansett/intermediate-files/03-merge/12-MAD/MAD.nospace.fasta"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_contigname.mad.20.out")
+    shell:
+        """
+        temp_file="temp_file_out.pep.fa"
+        cat {input.marmmetsp} {input.mad} > $temp_file
+        ./diamond deepclust -d $temp_file -o {output.deepclust} --member-cover 20
+        rm $temp_file
+        """
+
+
+rule mmseqs_marmmetsp_mad_nt:
+    input:
+        marmmetsp = expand("/vortexfs1/omics/alexander/data/mmetsp/{MMETSP_id}_clean.fasta",MMETSP_id=mmetsp_ids),
+        mad = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_narragansett/intermediate-files/03-merge/12-MAD/MAD.nospace.fasta"
+    output:
+        outfasta = os.path.join(OUTPUTDIR, "mmseqs_cluster_nt", "mad_mmetsp.fasta"),
+        outtsv = os.path.join(OUTPUTDIR, "mmseqs_cluster_nt", "mad_marmmetsp.tsv")
+    params:
+        threads = 10,
+        maxmemory = 15000, # -G o indicates local sequence identity.
+        identityparam = 0.2,
+        mincoverageshorter = 0.2,
+        mincoveragelong = 0.005,
+        name_db = "marmmetsp_mad_nt",
+        name_intermed = "marmmetsp_mad_nt_2",
+        name_subdb = "marmmetsp_mad_nt_3",
+        tmp_dir = "marmmetsp_mad_nt_tmp"
+    log:
+        err = os.path.join(OUTPUTDIR, "logs", "mmseqs_nt.err"),
+        out = os.path.join(OUTPUTDIR, "logs", "mmseqs_nt.log")
+    shell:
+        """
+        temp_file="temp_file_out.nt.fasta"
+        cat {input.marmmetsp} {input.mad} > $temp_file
+        
+        mmseqs createdb $temp_file {params.name_db}
+        mmseqs linclust {params.name_db} {params.name_intermed} {params.tmp_dir} --min-seq-id {params.identityparam} --cov-mode 1 -c {params.mincoverageshorter} 2> {log.err} 1> {log.out}
+        mmseqs createsubdb {params.name_intermed} {params.name_db} {params.name_subdb}
+        mmseqs convert2fasta {params.name_subdb} {output.outfasta}
+        mmseqs createtsv {params.name_db} {params.name_db} {params.name_intermed} {output.outtsv}
+        rm -rf {params.name_db}*
+        rm -rf {params.name_intermed}*
+        rm -rf {params.name_subdb}*
+        rm -rf {params.tmp_dir}
+        
+        #rm $temp_file
+        """
+        
+rule mmseqs_marmmetsp_mad:
+    input:
+        marmmetsp = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa",
+        mad = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_narragansett/intermediate-files/04-compare/13-MAD-proteins/MAD.fasta.transdecoder.pep"
+    output:
+        outfasta = os.path.join(OUTPUTDIR, "mmseqs_cluster", "mad_mmetsp.fasta"),
+        outtsv = os.path.join(OUTPUTDIR, "mmseqs_cluster", "mad_marmmetsp.tsv")
+    params:
+        threads = 10,
+        maxmemory = 15000, # -G o indicates local sequence identity.
+        identityparam = 0.2,
+        mincoverageshorter = 0.2,
+        mincoveragelong = 0.005,
+        name_db = "marmmetp_mad",
+        name_intermed = "marmmetp_mad_2",
+        name_subdb = "marmmetp_mad_3",
+        tmp_dir = "marmmetp_mad_tmp"
+    log:
+        err = os.path.join(OUTPUTDIR, "logs", "mmseqs.err"),
+        out = os.path.join(OUTPUTDIR, "logs", "mmseqs.log")
+    shell:
+        """
+        temp_file="temp_file_out.pep.fa"
+        cat {input.marmmetsp} {input.mad} > $temp_file
+        
+        mmseqs createdb $temp_file {params.name_db}
+        mmseqs linclust {params.name_db} {params.name_intermed} {params.tmp_dir} --min-seq-id {params.identityparam} --cov-mode 1 -c {params.mincoverageshorter} 2> {log.err} 1> {log.out}
+        mmseqs createsubdb {params.name_intermed} {params.name_db} {params.name_subdb}
+        mmseqs convert2fasta {params.name_subdb} {output.outfasta}
+        mmseqs createtsv {params.name_db} {params.name_db} {params.name_intermed} {output.outtsv}
+        rm -rf {params.name_db}*
+        rm -rf {params.name_intermed}*
+        rm -rf {params.name_subdb}*
+        rm -rf {params.tmp_dir}
+        
+        rm $temp_file
+        """
+
+rule diamond_deepclust_withorigin_mad_001:
+    input:
+        marmmetsp = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa",
+        mad = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_narragansett/intermediate-files/04-compare/13-MAD-proteins/MAD.fasta.transdecoder.pep"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_contigname.mad.001.out")
+    shell:
+        """
+        temp_file="temp_file_out.pep.fa"
+        cat {input.marmmetsp} {input.mad} > $temp_file
+        ./diamond deepclust -d $temp_file -o {output.deepclust} --member-cover 0.001
+        rm $temp_file
+        """
+        
+rule diamond_deepclust_withorigin_mad_50:
+    input:
+        marmmetsp = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa",
+        mad = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_narragansett/intermediate-files/04-compare/13-MAD-proteins/MAD.fasta.transdecoder.pep"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_contigname.mad.50.10.out")
+    shell:
+        """
+        temp_file="temp_file_out.pep.fa"
+        cat {input.marmmetsp} {input.mad} > $temp_file
+        ./diamond deepclust -d $temp_file -o {output.deepclust} --member-cover 50 --approx-id 10
+        rm $temp_file
+        """
+        
+rule diamond_deepclust_withorigin_mad:
+    input:
+        marmmetsp = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa",
+        mad = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_narragansett/intermediate-files/04-compare/13-MAD-proteins/MAD.fasta.transdecoder.pep"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_contigname.mad.out")
+    shell:
+        """
+        temp_file="temp_file_out.pep.fa"
+        cat {input.marmmetsp} {input.mad} > $temp_file
+        ./diamond deepclust -d $temp_file -o {output.deepclust} --member-cover 80
+        rm $temp_file
+        """
+        
+rule extract_clusters:
+    input:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust.out")
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_representatives.set.out")
+    run:
+        cluster_file=pd.read_csv(input.deepclust,sep="\t",header=None,names=["Rep","Mem"])
+        with open(output.deepclust,"w") as f:
+            f.write("\n".join(set(cluster_file.Rep)))   
+
+rule extract_from_reps:
+    input:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_representatives.set.out"),
+        marmmetsp = os.path.join("/vortexfs1","omics","alexander","data",
+                                 "databases","marmmetsp-5Dec2022","reference.pep.fa")
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_representatives.set.fasta")
+    shell:
+        """
+        seqtk subseq {input.marmmetsp} {input.deepclust} > {output.deepclust}
+        """
+
+rule diamond_makedb:
+    input:
+        deepclust = os.path.join(OUTPUTDIR,"deepclust_representatives.set.fasta")
+    output:
+        diamond = os.path.join(OUTPUTDIR,"diamond","database.set.dmnd")
+    shell:
+        """
+        ./diamond makedb --in {input.deepclust} -d {output.diamond}
+        """
+
+rule diamond_search:
+    input:
+        diamond = os.path.join(OUTPUTDIR,"diamond","database.set.dmnd"),
+        marmmetsp = os.path.join("/vortexfs1","omics","alexander","data",
+                                 "databases","marmmetsp-5Dec2022","reference.pep.fa")
+    output:
+        protein_db_out = os.path.join(OUTPUTDIR,"pep_diamond_matches","hits-db.set.tsv")
+    shell:
+        """
+        ./diamond blastp -d {input.diamond} -q {input.marmmetsp} -o {output.protein_db_out} --min-score 50 --ultra-sensitive
+        """
+
+rule diamond_count_types:
+    input:
+        protein_db_out = os.path.join(OUTPUTDIR,"pep_diamond_matches","hits-db.set.tsv")
+    output:
+        protein_types_out = os.path.join(OUTPUTDIR,"pep_diamond_matches","hits-types.set.tsv")
+    run:
+        diamond_file=pd.read_csv(input.protein_db_out,sep="\t",header=None,names=["Rep","Mem"])
+        diamond_file_ct=diamond_file.groupby(["Rep"]).Mem.count().reset_index().groupby("Mem").Rep.count().reset_index()
+        diamond_file_ct.to_csv(output.protein_types_out)
+
+rule diamond_count_db:
+    input:
+        protein_db_out = os.path.join(OUTPUTDIR,"deepclust.out")
+    output:
+        protein_types_out = os.path.join(OUTPUTDIR,"deepclust_representatives.count")
+    run:
+        diamond_file=pd.read_csv(input.protein_db_out,sep="\t",header=None,names=["Rep","Mem"])
+        diamond_file_ct=diamond_file.groupby(["Rep"]).Mem.count().reset_index().groupby("Mem").Rep.count().reset_index()
+        diamond_file_ct.to_csv(output.protein_types_out)

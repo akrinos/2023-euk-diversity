@@ -1,0 +1,267 @@
+import os
+import random
+import pandas as pd
+import numpy as np
+import datetime
+import glob
+from snakemake.exceptions import print_exception, WorkflowError  
+
+## Removed duplicates using:
+# awk 'BEGIN {i = 1;} { if ($1 ~ /^>/) { tmp = h[i]; h[i] = $1; } else if (!a[$1]) { s[i] = $1; a[$1] = "1"; i++; } else { h[i] = tmp; } } END { for (j = 1; j < i; j++) { print h[j]; print s[j]; } }' < ../../../output/ehux-aik-orthofinder-output/copied-dir-mv/P_pouchetii_CCB-phaeo.aa.fasta > dups_removed_P_pouchetii_CCB.aa.fasta 
+
+mydate = datetime.datetime.now()
+datestring = mydate.strftime("%b%d")
+
+phaeo_tsv = pd.read_csv("selected-phaeo.tsv",sep="\t")
+codes_phaeo = list(phaeo_tsv["Source_ID"]) + ["rmdup_PhaeoCCB"]
+
+mmetsp_csv = pd.read_csv("selected-mmetsp.csv")
+codes_mmetsp = random.sample(list(mmetsp_csv["short_name"]),5)
+
+OUTPUTDIR = "../../../output/ehux-aik-orthofinder-output"
+AADIR=os.path.join("extracted","2022-08-19")
+AADIR="."
+IDS=[curr.split(".")[0] for curr in os.listdir(AADIR) if ("ALL" not in curr) & (curr!='')&(len(curr)>0) & ("at" in curr)]
+crypto_diatom_codes = [""]
+codes_genomes=['Chrsp',
+ 'Oxytri1','Phaglo1','Phaant1',
+ 'Guith1']
+codes_aik = ["3492","914"]
+rule all:
+    input:
+        copied_files_phaeo = expand(os.path.join(OUTPUTDIR,"copied-dir","{code}-phaeo.aa.fasta"),code=codes_phaeo),
+        copied_files_mmetsp = expand(os.path.join(OUTPUTDIR,"copied-dir","{code}-mmetsp.aa.fasta"),code=codes_mmetsp),
+        #copied_files_aik = expand(os.path.join(OUTPUTDIR,"copied-dir","{code}-aik.aa.fasta"),code=codes_aik),
+        copied_files_aik = expand(os.path.join(OUTPUTDIR,"copied-dir","{code}-genome.aa.fasta"),code=codes_genomes),
+        orthfinder_genct = os.path.join(OUTPUTDIR, "orthofinder_phaeo_for_tree2", 
+                                        "Results_" + str(datestring),"Orthogroups",
+                                        "Orthogroups.GeneCount.tsv"),
+#        busco_out = expand(os.path.join(OUTPUTDIR, "busco_{code}", "run_eukaryota_odb10", 
+#                                        "full_table.tsv"), code = [curr+"-mmetsp" for curr in codes_mmetsp] + 
+#                                                                  [curr+"-phaeo" for curr in codes_phaeo]),
+        #tree_result = os.path.join(AADIR, 'trees/fasttree.nwk')
+        
+        
+rule mafft:
+    input: aa=os.path.join(AADIR,'{id}.concatenated.faa')
+    output: 
+        aln=os.path.join(AADIR,'mafft/{id}.aln')
+    conda: "envs/mafft-env.yaml"
+    shell:'''
+        mafft --thread -8 --auto {input.aa} > {output.aln} 
+        '''
+
+rule trimal:
+    input: os.path.join(AADIR,'mafft/{id}.aln')
+    output: os.path.join(AADIR,'mafft/{id}.aln.trimmed')
+    conda: "envs/mafft-env.yaml"
+    shell:'''
+          trimal -in {input} -out {output} -automated1
+          '''
+          
+rule clustalw:
+    input: os.path.join(AADIR, 'mafft/{id}.aln.trimmed')
+    output: os.path.join(AADIR, 'mafft/{id}.aln.clustalw.out')
+    conda: "envs/mafft-env.yaml"
+    shell: '''
+           clustalo --infile {input} --distmat-out {output} --percent-id --full
+           '''
+
+rule order_add_missing:
+    input: 
+        trimmed=os.path.join(AADIR,'mafft/{id}.aln.trimmed'),
+        all_genomes=os.path.join(AADIR, 'ALLGENOMES.list')
+    output: os.path.join(AADIR, 'mafft/{id}.aln.trimmed.ordered')
+    shell: 
+        """
+        python scripts/order_add_missing.py {input.trimmed} {input.all_genomes} {output}
+        """
+   
+            
+rule concatenated_fasta:
+    input: 
+        faa= expand(os.path.join(AADIR, 'mafft/{id}.aln.trimmed.ordered'), id=IDS),
+        mags=os.path.join(AADIR, 'ALLGENOMES.list')
+    output: os.path.join(AADIR, 'mafft/concatenated_sequences.aln')
+    shell: 
+        """
+        python scripts/consolidate.py {input.mags} {output} {input.faa}
+        """
+
+rule trimal_concat:
+    input: os.path.join(AADIR,'mafft/concatenated_sequences.aln')
+    output: os.path.join(AADIR,'mafft/concatenated_sequences.aln.trimmed')
+    conda: "envs/mafft-env.yaml"
+    shell:'''
+          cat {input} | sed 's/*$//g' | sed 's/\.$//g' > concat.clean.aln
+          trimal -in concat.clean.aln -out {output} -automated1
+          '''
+          
+rule fast_tree: 
+    input: os.path.join(AADIR,'mafft/concatenated_sequences.aln.trimmed',)
+    output: os.path.join(AADIR, 'trees/fasttree.nwk')
+    conda: "envs/mafft-env.yaml"
+    shell:'''
+          FastTree -boot 100 {input} > {output}
+          '''
+
+rule copy_files:
+    input:
+        lambda filename: get_file_loc(filename.code)
+    output:
+        os.path.join(OUTPUTDIR,"copied-dir","{code}.aa.fasta")
+    shell:
+        """
+        if ( file {input} | grep -q compressed ); then
+            gunzip -c {input} > {output}
+        else
+            cp {input} {output}
+        fi
+        """
+
+rule copy_files_mmetsp:
+    input:
+        os.path.join("/vortexfs1/omics/alexander/data/mmetsp/{code}_clean.pep.fa")
+    output:
+        os.path.join(OUTPUTDIR,"copied-dir","{code}-mmetsp.aa.fasta")
+    shell:
+        """
+        if ( file {input} | grep -q compressed ); then
+            gunzip -c {input} > {output}
+        else
+            cp {input} {output}
+        fi
+        """
+
+rule copy_files_aik:
+    input:
+        os.path.join("../../../../2022-Krinos-thermal/ehux-therm/transcriptome-snake/ehux-therm-processed/transdecoder_multi/","{ehux_code}.fasta.transdecoder.pep")
+    output:
+        os.path.join(OUTPUTDIR,"copied-dir","{ehux_code}-aik.aa.fasta")
+    shell:
+        """
+        if ( file {input} | grep -q compressed ); then
+            gunzip -c {input} > {output}
+        else
+            cp {input} {output}
+        fi
+        """
+
+rule copy_files_genome:
+    input:
+        os.path.join("/vortexfs1/omics/alexander/halexander/2020-05-euk-abund/phylogenomics/reference-genomes/genomes/all_genomes/{code}.aa.fasta")
+    output:
+        os.path.join(OUTPUTDIR,"copied-dir","{code}-genome.aa.fasta")
+    shell:
+        """
+        if ( file {input} | grep -q compressed ); then
+            gunzip -c {input} > {output}
+        else
+            cp {input} {output}
+        fi
+        """
+
+rule copy_files_phaeo:
+    input:
+        os.path.join("/vortexfs1/omics/alexander/mmarsbris/Tara-Phaeo/prots_dammit/{code}.pep")
+    output:
+        os.path.join(OUTPUTDIR,"copied-dir","{code}-phaeo.aa.fasta")
+    shell:
+        """
+        if ( file {input} | grep -q compressed ); then
+            gunzip -c {input} > {output}
+        else
+            cp {input} {output}
+        fi
+        """
+        
+rule mv_files:
+    input:
+        os.path.join(OUTPUTDIR,"copied-dir","{code}.aa.fasta")
+    output:
+        os.path.join(OUTPUTDIR,"copied-dir-mv","{code}.aa.fasta")
+    shell:
+        """
+        cp {input} {output}
+        """
+        
+rule orthofinder:
+    input:
+        input_prot_files = expand(os.path.join(OUTPUTDIR,"copied-dir-mv","{code}.aa.fasta"),
+                                  code=[curr+"-phaeo" for curr in codes_phaeo] + [curr+"-mmetsp" for curr in codes_mmetsp]+[curr + "-aik" for curr in codes_aik]+[curr+"-genome" for curr in codes_genomes])
+    output:
+        orthfinder_genct = os.path.join(OUTPUTDIR, "orthofinder_phaeo_for_tree2", 
+                                        "Results_" + str(datestring),"Orthogroups",
+                                        "Orthogroups.GeneCount.tsv"),
+        orthfinder_OGs = os.path.join(OUTPUTDIR, "orthofinder_phaeo_for_tree2",
+                                      "Results_" + str(datestring),
+                                      "Orthogroups","Orthogroups.tsv"),
+        orthfinder_SCGs = os.path.join(OUTPUTDIR, "orthofinder_phaeo_for_tree2",
+                                      "Results_" + str(datestring),
+                                      "Orthogroups", "Orthogroups_SingleCopyOrthologues.txt")
+      
+    params:
+        outfold = os.path.join(OUTPUTDIR, "orthofinder_phaeo_for_tree2"),
+        outfolder = OUTPUTDIR,
+        directory_prot = os.path.join(OUTPUTDIR, "copied-dir-mv")
+    conda:
+        os.path.join("envs", "orthofinder-env.yaml")
+    shell:
+        '''
+        rm -rf {params.outfold}
+        orthofinder -t 18 -o {params.outfold} -f {params.directory_prot}
+        '''
+
+rule mv_files_crypto_diatom:
+    input:
+        inputfiles=expand(os.path.join(OUTPUTDIR,"copied-dir","{code}.aa.fasta"),code=crypto_diatom_codes)
+    output:
+        expand(os.path.join(OUTPUTDIR,"copied-dir-crypto-diatom","{code}.aa.fasta"),code=crypto_diatom_codes)
+    params:
+        outdir = os.path.join(OUTPUTDIR,"copied-dir-crypto-diatom")
+    shell:
+        """
+        for curr in {input.inputfiles}; do
+            cp $curr {params.outdir}
+        done
+        """
+        
+rule orthofinder_crypto:
+    input:
+        input_prot_files = expand(os.path.join(OUTPUTDIR,"copied-dir-crypto-diatom","{code}.aa.fasta"),code=crypto_diatom_codes)
+    output:
+        orthfinder_genct = os.path.join(OUTPUTDIR, "orthofinder-cryptophyte-diatom", 
+                                        "Results_" + str(datestring),"Orthogroups",
+                                        "Orthogroups.GeneCount.tsv"),
+        orthfinder_OGs = os.path.join(OUTPUTDIR, "orthofinder-cryptophyte-diatom",
+                                      "Results_" + str(datestring),
+                                      "Orthogroups","Orthogroups.tsv"),
+        orthfinder_SCGs = os.path.join(OUTPUTDIR, "orthofinder-cryptophyte-diatom",
+                                      "Results_" + str(datestring),
+                                      "Orthogroups", "Orthogroups_SingleCopyOrthologues.txt")
+      
+    params:
+        outfold = os.path.join(OUTPUTDIR, "orthofinder-cryptophyte-diatom"),
+        outfolder = OUTPUTDIR,
+        directory_prot = os.path.join(OUTPUTDIR, "copied-dir-crypto-diatom")
+    conda:
+        os.path.join("envs", "orthofinder-env.yaml")
+    shell:
+        '''
+        #rm -rf {params.outfold}
+        orthofinder -t 10 -o {params.outfold} -f {params.directory_prot}
+        '''
+
+rule busco:
+    input:
+        input_prot_file = os.path.join(OUTPUTDIR,"copied-dir-mv","{code}.aa.fasta")
+    output:
+        output_busco = os.path.join(OUTPUTDIR,"busco_{code}","run_eukaryota_odb10","full_table.tsv")
+    params:
+        busco_fold = os.path.join(OUTPUTDIR,"busco_{code}")
+    conda:
+        os.path.join("envs","busco-env.yaml")
+    shell:
+        """
+        busco -f -i {input.input_prot_file} -l eukaryota_odb10 -o {params.busco_fold} -m proteins 
+        """

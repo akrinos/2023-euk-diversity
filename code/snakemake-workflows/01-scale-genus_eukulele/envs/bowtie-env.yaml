@@ -1,0 +1,9 @@
+name: bowtie
+channels:
+    - bioconda
+    - conda-forge
+    - defaults
+dependencies:
+    - bowtie2
+    - bedtools
+    - samtools

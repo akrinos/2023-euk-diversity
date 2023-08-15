@@ -1,0 +1,465 @@
+import os
+import pandas as pd
+import numpy as np
+import glob
+from Bio import SeqIO
+from pathlib import Path
+
+INPUTDIR = "/vortexfs1/omics/alexander/data/TARA/PRJEB4352/" #"download-data-snake/tara-metag/protist"
+OUTPUTDIR = "../../../output/tara-eukulele-mapping"
+SCRATCHDIR="/vortexfs1/scratch/akrinos"
+
+phaeo_entries = pd.read_csv("selected-phaeo.tsv",sep="\t")
+phaeo_unique = phaeo_entries["Source_ID"]
+phaeo_grouped = dict({"colonies":["P_antarctica_caron",
+                                  "P_antarctica_ccmp1374",
+                                  "P_globosa_ccmp1528",
+                                  "P_sp_ccmp2710",
+                                  "P_pouchetii_CCB"],
+                                  "free":["P_cordata_ccmp3104","P_jahnii_ccmp2496",
+                                          "P_rex_ccmp2000"]})
+
+other_mmetsp_entries = pd.read_csv("../eukulele-remap-NB/marmmetsp/tax-table.txt",sep="\t")
+other_mmetsp_entries = other_mmetsp_entries.loc[[("Phaeocystis" not in curr) for curr in other_mmetsp_entries.Genus],:]
+mmetsp_ids = list(set(other_mmetsp_entries.loc[[("MMETSP" in curr) for curr in other_mmetsp_entries.Source_ID],"Source_ID"]))
+
+combined_tax_file = pd.concat([other_mmetsp_entries,phaeo_entries])
+#combined_tax_file.to_csv("combined_tax_file.tsv",sep="\t")
+
+tara_metadata = pd.read_csv("BEST_tara_metadata.csv")
+tara_metadata = tara_metadata.loc[[";" in str(curr) for curr in list(tara_metadata["Uniform resource locator/link to metadata file"])],:]
+run_accessions = tara_metadata["Analysis ID"]
+input_data = [curr.split("_")[0] for curr in glob.glob(INPUTDIR +'**/*.fastq.gz', recursive=True)]
+run_accessions=[f for f in run_accessions if (f!="")&((input_data.count(f)==2))]
+
+tara_assemblies = [curr for curr in os.listdir("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/") if ("-all-" in curr) & ("ZZZ" not in curr)]# if\
+                   #("NAO" in curr) | ("SO" in curr)]
+ALIASES = tara_assemblies
+tara_raw_files = pd.read_csv("PRJEB4352_metaG_wenv_PE.txt",sep="\t")
+ocean_layer = [curr.split("_")[2] if len(curr.split("_"))>2 else curr for curr in tara_raw_files["Sample material"]]
+size_fraction = [curr.split("_")[-1] for curr in tara_raw_files["Sample material"]]
+size_fraction = ["0.8-5" if curr=="0.8-3" else curr for curr in size_fraction]
+ocean = [curr.split("[")[-1].split("]")[0] for curr in tara_raw_files["OS region"]]
+combined_labels = [ocean+"-all-"+layer+"-"+sizefrac+".00" for ocean,layer,sizefrac in zip(ocean,ocean_layer,size_fraction)]
+run_accessions =  tara_raw_files["run_accession"]
+print(combined_labels,flush=True)
+raw_file_dict = dict()
+for curr,curr_acc in zip(combined_labels,run_accessions):
+    if curr in raw_file_dict:
+        raw_file_dict[curr].append(curr_acc)
+    else:
+        raw_file_dict[curr] = [curr_acc]
+
+def get_file_ids(tara_assembly_in):
+    return raw_file_dict[tara_assembly_in]
+
+def get_raw_files_commas(tara_assembly_in,left_or_right="left"):
+    if left_or_right=="left":
+        return ",".join(["/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/trimmed/PRJEB4352/" + curr + "_1.trimmed.fastq.gz" for curr in get_file_ids(tara_assembly_in)])
+    
+    return ",".join(["/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/trimmed/PRJEB4352/" + curr + "_2.trimmed.fastq.gz" for curr in get_file_ids(tara_assembly_in)])
+    
+def get_source_ids(grouping):
+    return phaeo_grouped[grouping]
+
+ruleorder: eukulele_tara_all > eukulele_tara_data
+
+rule all:
+    input:
+#        eukulele_tara_antaractica = expand(os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+#                                                        "{eukulele_database}","taxonomy_estimation","done.txt"),
+#                                           eukulele_database = phaeo_unique, tara_assembly_name = tara_assemblies),
+        eukulele_tara_all = expand(os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                                     "phaeo_all","taxonomy_estimation","done.txt"),
+                                   tara_assembly_name = tara_assemblies),
+        eukulele_tara_grouped = expand(os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                                     "{grouping}_phaeo","taxonomy_estimation","done.txt"),
+                                   tara_assembly_name = tara_assemblies, grouping = list(phaeo_grouped.keys())),
+        phaeo_contigs = expand(os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","{tara_assembly_name}",
+                                     "phaeo_contigs.fasta"),tara_assembly_name=tara_assemblies),
+        phaeo_coverm = expand(os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","{tara_assembly_name}",
+                                     "coverm","phaeo_abund.out"),tara_assembly_name=tara_assemblies)
+#        sam_bwa = expand(os.path.join(SCRATCHDIR,"bowtie","sam","{file_id}.sam.gz"),file_id=tara_assemblies)
+       # bowtie = expand(os.path.join(OUTPUTDIR,"bowtie","databases","{file_id}.1.bt2"), file_id=tara_assemblies),
+       # sam_files_cleaned = expand(os.path.join(OUTPUTDIR,"bowtie","sam","{file_id}.cleaned"), file_id=tara_assemblies),
+       # coverage_files = expand(os.path.join(OUTPUTDIR,"coverage","{file_id}.cov"), file_id=tara_assemblies)
+       # Make database containing MarMMETSP + P. antarctica & map tara assemblies from this metadata against it
+        
+
+rule create_eukulele_database:
+    input:
+        phaeo_file = "/vortexfs1/omics/alexander/mmarsbris/Tara-Phaeo/prots_dammit/{phaeo_id}.pep",
+        input_tax_file = "combined_tax_file.tsv"
+    output:
+        reference_pep_file = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_plus_{phaeo_id}","reference.pep.fa"),
+        reference_tax_file = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_plus_{phaeo_id}","taxonomy-table.txt")
+    params:
+        phaeo_id="{phaeo_id}",
+        other_mmetsps = expand(os.path.join("/vortexfs1/omics/alexander/data/mmetsp/{curr}_clean.pep.fa"),
+                                            curr=mmetsp_ids),
+        eukulele_loc = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_plus_{phaeo_id}"),
+        marref_loc = "/vortexfs1/omics/alexander/akrinos/remodeling/EUKulele/databases/marref/marref_proteins_foreukulele.faa" 
+    shell:
+        """
+        touch {output.reference_pep_file}
+        rm {output.reference_pep_file}
+        for curr in {params.other_mmetsps}; do
+            if [ -f $curr ]; then
+                mmid=$(echo $curr | cut -d"_" -f1 | cut -d"/" -f7)
+                variable_in="/SOURCE_ID="$mmid
+                sed -e '/^>/ s@$@ '"$variable_in"'@' $curr >> {output.reference_pep_file}
+            fi
+        done
+        variable_in="/SOURCE_ID="{params.phaeo_id}
+        sed -e '/^>/ s@$@ '"$variable_in"'@' {input.phaeo_file} >> {output.reference_pep_file}
+        cat {input.input_tax_file} > {output.reference_tax_file}
+        cat {params.marref_loc} >> {output.reference_pep_file}
+        cd {params.eukulele_loc}
+        create_protein_table.py --infile_peptide reference.pep.fa --infile_taxonomy taxonomy-table.txt --outfile_json prot-map.json --output tax-table.txt --delim "/" --col_source_id Source_ID --taxonomy_col_id taxonomy --column SOURCE_ID
+        """
+
+rule create_eukulele_database_all:
+    input:
+        phaeo_file = expand("/vortexfs1/omics/alexander/mmarsbris/Tara-Phaeo/prots_dammit/{phaeo_id}.pep",phaeo_id=phaeo_unique),
+        input_tax_file = "combined_tax_file.tsv"
+    output:
+        reference_pep_file = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_all_phaeo","reference.pep.fa"),
+        reference_tax_file = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_all_phaeo","taxonomy-table.txt")
+    params:
+        other_mmetsps = expand(os.path.join("/vortexfs1/omics/alexander/data/mmetsp/{curr}_clean.pep.fa"),
+                                            curr=mmetsp_ids),
+        eukulele_loc = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_all_phaeo"),
+        marref_loc = "/vortexfs1/omics/alexander/akrinos/remodeling/EUKulele/databases/marref/marref_proteins_foreukulele.faa",
+        phaeo_ids = list(phaeo_unique)
+    shell:
+        """
+        touch {output.reference_pep_file}
+        rm {output.reference_pep_file}
+        for curr in {params.other_mmetsps}; do
+            if [ -f $curr ]; then
+                mmid=$(echo $curr | cut -d"_" -f1 | cut -d"/" -f7)
+                variable_in="/SOURCE_ID="$mmid
+                sed -e '/^>/ s@$@ '"$variable_in"'@' $curr >> {output.reference_pep_file}
+            fi
+        done
+        for phaeo_id in {params.phaeo_ids}; do
+            variable_in="/SOURCE_ID=$phaeo_id"
+            sed -e '/^>/ s@$@ '"$variable_in"'@' /vortexfs1/omics/alexander/mmarsbris/Tara-Phaeo/prots_dammit/"$phaeo_id".pep >> {output.reference_pep_file}
+        done
+        cat {input.input_tax_file} > {output.reference_tax_file}
+        cat {params.marref_loc} >> {output.reference_pep_file}
+        cd {params.eukulele_loc}
+        create_protein_table.py --infile_peptide reference.pep.fa --infile_taxonomy taxonomy-table.txt --outfile_json prot-map.json --output tax-table.txt --delim "/" --col_source_id Source_ID --taxonomy_col_id taxonomy --column SOURCE_ID
+        """                                    
+
+rule eukulele_tara_data:
+    input:
+        reference_pep_file = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_plus_{eukulele_database}","reference.pep.fa")
+    output:
+        eukulele_done = os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                        "{eukulele_database}","taxonomy_estimation","done.txt")
+    params:
+        output_folder = os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                                     "{eukulele_database}"),
+        reference_dir = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_plus_{eukulele_database}"),
+        sample_dir = "/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/{tara_assembly_name}"
+    shell:
+        """
+        EUKulele --sample_dir {params.sample_dir} --consensus_proportion 0.97 --reference_dir {params.reference_dir} -o {params.output_folder} --mets_or_mags mets --p_ext .faa
+        touch {output.eukulele_done}
+        """
+
+rule create_eukulele_database_phaeo:
+    input:
+        phaeo_file = lambda filename: expand("/vortexfs1/omics/alexander/mmarsbris/Tara-Phaeo/prots_dammit/{phaeo_id}.pep",
+                                             phaeo_id=get_source_ids(filename.grouping)),
+        input_tax_file = "combined_tax_file.tsv"
+    output:
+        reference_pep_file = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_plus_{grouping}_group","reference.pep.fa"),
+        reference_tax_file = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_plus_{grouping}_group","taxonomy-table.txt")
+    params:
+        grouping_id="{grouping}",
+        other_mmetsps = expand(os.path.join("/vortexfs1/omics/alexander/data/mmetsp/{curr}_clean.pep.fa"),
+                                            curr=mmetsp_ids),
+        eukulele_loc = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_plus_{grouping}_group"),
+        marref_loc = "/vortexfs1/omics/alexander/akrinos/remodeling/EUKulele/databases/marref/marref_proteins_foreukulele.faa" 
+    shell:
+        """
+        touch {output.reference_pep_file}
+        rm {output.reference_pep_file}
+        for curr in {params.other_mmetsps}; do
+            if [ -f $curr ]; then
+                mmid=$(echo $curr | cut -d"_" -f1 | cut -d"/" -f7)
+                variable_in="/SOURCE_ID="$mmid
+                sed -e '/^>/ s@$@ '"$variable_in"'@' $curr >> {output.reference_pep_file}
+            fi
+        done
+        variable_in="/SOURCE_ID="{params.grouping_id}
+        cat {params.marref_loc} >> {output.reference_pep_file}
+        for curr in {input.phaeo_file}; do
+            sed -e '/^>/ s@$@ '"$variable_in"'@' $curr >> {output.reference_pep_file}
+        done
+        cat {input.input_tax_file} > {output.reference_tax_file}
+        cd {params.eukulele_loc}
+        create_protein_table.py --infile_peptide reference.pep.fa --infile_taxonomy taxonomy-table.txt --outfile_json prot-map.json --output tax-table.txt --delim "/" --col_source_id Source_ID --taxonomy_col_id taxonomy --column SOURCE_ID
+        """
+        
+rule eukulele_tara_group:
+    input:
+        reference_pep_file = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_plus_{grouping}_group","reference.pep.fa")
+    output:
+        eukulele_done = os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                                     "{grouping}_phaeo","taxonomy_estimation","done.txt")
+    params:
+        output_folder = os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                                     "{grouping}_phaeo"),
+        reference_dir = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_plus_{grouping}_group"),
+        sample_dir = "/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/{tara_assembly_name}"
+    shell:
+        """
+        EUKulele --sample_dir {params.sample_dir} --consensus_proportion 0.97 --reference_dir {params.reference_dir} -o {params.output_folder} --mets_or_mags mets --p_ext .faa
+        touch {output.eukulele_done}
+        """
+        
+rule eukulele_tara_all:
+    input:
+        reference_pep_file = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_all_phaeo","reference.pep.fa")
+    output:
+        eukulele_done = os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                                     "phaeo_all","taxonomy_estimation","done.txt")
+    params:
+        output_folder = os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                                     "phaeo_all"),
+        reference_dir = os.path.join(OUTPUTDIR,"EUKulele_databases","marmmetsp_all_phaeo"),
+        sample_dir = "/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/{tara_assembly_name}"
+    shell:
+        """
+        EUKulele --sample_dir {params.sample_dir} --consensus_proportion 0.97 --reference_dir {params.reference_dir} -o {params.output_folder} --mets_or_mags mets --p_ext .faa
+        touch {output.eukulele_done}
+        """
+
+rule bwa_build:
+    input:
+        assembly = os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/","{file_id}", "proteins.faa")
+    output:
+        outfile = os.path.join(SCRATCHDIR,"bwa","databases","{file_id}.index_built")
+    params:
+        dbname = "{file_id}", #os.path.join(SCRATCHDIR,"bwa","databases","{file_id}")
+        assembly_loc = os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/","{file_id}"),
+        protein_file = "proteins.faa"
+    log:
+        err = os.path.join(OUTPUTDIR,"logs","bwa","{file_id}.build.err"),
+        out = os.path.join(OUTPUTDIR,"logs","bwa","{file_id}.build.out")
+    conda:
+        "envs/bwa-env.yaml"
+    shell:
+        """
+        exec_loc=$(which bwa-mem2)
+        exec_loc=$(echo $exec_loc | rev | cut -d"/" -f 2- | rev)
+        (cd $exec_loc && ./bwa-mem2 index -p {params.dbname} {params.assembly_loc}/{params.protein_file}) 1> {log.out} 2> {log.err}
+        touch {output.outfile}
+        """
+
+rule bwa_mem:
+    input:
+        outfile = os.path.join(SCRATCHDIR,"bwa","databases","{file_id}.index_built"),
+        raw1 = lambda filename: expand(os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/trimmed/PRJEB4352","{raw_file_id}" + "_1.trimmed.fastq.gz"), raw_file_id = get_file_ids(filename.file_id)),
+        raw2 = lambda filename: expand(os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/trimmed/PRJEB4352","{raw_file_id}" + "_2.trimmed.fastq.gz"), raw_file_id = get_file_ids(filename.file_id)),
+        assembly = os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/","{file_id}", "proteins.faa")
+    output:
+        samfile = os.path.join(SCRATCHDIR,"bowtie","sam","{file_id}.sam.gz"),
+        sample_file1=temp(os.path.join(SCRATCHDIR,"test_dirs","{file_id}_tmp","samp_1.fastq.gz")),
+        sample_file2=temp(os.path.join(SCRATCHDIR,"test_dirs","{file_id}_tmp","samp_2.fastq.gz"))
+    params:
+        assembly_loc = os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/","{file_id}"),
+        assembly = "{file_id}"
+    conda:
+        "envs/bwa-env.yaml"
+    shell:
+        """
+        cat {input.raw1} > {output.sample_file1}
+        exec_loc=$(which bwa-mem2)
+        exec_loc=$(echo $exec_loc | rev | cut -d"/" -f 2- | rev)
+        cat {input.raw2} > {output.sample_file2}
+        (cd $exec_loc) && bwa-mem2 mem {params.assembly} {output.sample_file1} {output.sample_file2} | gzip -3 > {output.samfile})
+        """
+        
+rule bowtie_build:
+    input:
+        assembly = os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/","{file_id}", "proteins.faa")
+    output:
+        outfile = os.path.join(OUTPUTDIR,"bowtie","databases","{file_id}.1.bt2")
+    params:
+        dbname = os.path.join(OUTPUTDIR,"bowtie","databases","{file_id}")
+    log:
+        err = os.path.join(OUTPUTDIR,"logs","bowtie","{file_id}.build.err"),
+        out = os.path.join(OUTPUTDIR,"logs","bowtie","{file_id}.build.out")
+    conda:
+        "envs/bowtie-env.yaml"
+    shell:
+        """
+        bowtie2-build {input.assembly} {params.dbname} 1> {log.out} 2> {log.err}
+        """
+
+rule bowtie_align:
+    input:
+        raw = lambda filename: expand(os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/trimmed/PRJEB4352","{raw_file_id}" + "_1.trimmed.fastq.gz"), raw_file_id = get_file_ids(filename.file_id)),
+        bt_outfile = os.path.join(OUTPUTDIR,"bowtie","databases","{file_id}.1.bt2")
+    output:
+        outfile = os.path.join(OUTPUTDIR,"bowtie","sam","{file_id}.sam")
+    params:
+        dbname = os.path.join(OUTPUTDIR,"bowtie","databases","{file_id}"),
+        raw_left = lambda filename: get_raw_files_commas(filename.file_id,left_or_right="left"),
+        raw_right = lambda filename: get_raw_files_commas(filename.file_id,left_or_right="right")
+    log:
+        err = os.path.join(OUTPUTDIR,"logs","bowtie","{file_id}.sam.err"),
+        out = os.path.join(OUTPUTDIR,"logs","bowtie","{file_id}.sam.out")
+    conda:
+        "envs/bowtie-env.yaml"
+    shell:
+        '''
+        bowtie2 -x {params.dbname} -1 {params.raw_left} -2 {params.raw_right} -S {output.outfile} --threads 6 1> {log.out} 2> {log.err}
+        '''
+
+rule gen_bam:
+    input:
+        sam = os.path.join(OUTPUTDIR,"bowtie","sam","{file_id}.sam")
+    output:
+        outbam = os.path.join(OUTPUTDIR,"bowtie","bam","{file_id}.bam"),
+        outbam_sorted = os.path.join(OUTPUTDIR,"bowtie","bam","{file_id}.sorted.bam")
+    log:
+        err = os.path.join(OUTPUTDIR,"logs","bam","{file_id}.err"),
+        out = os.path.join(OUTPUTDIR,"logs","bam","{file_id}.out")
+    conda:
+        "envs/bowtie-env.yaml"
+    shell:
+        '''
+        samtools view -bS {input.sam} > {output.outbam} 1>> {log.out} 2>> {log.err}
+        samtools sort {output.outbam} -o {output.outbam_sorted} 1>> {log.out} 2>> {log.err}
+        '''
+  
+rule clean_sam:
+    input:
+        outbam = os.path.join(OUTPUTDIR,"bowtie","bam","{file_id}.bam"),
+        outbam_sorted = os.path.join(OUTPUTDIR,"bowtie","bam","{file_id}.sorted.bam")
+    output:
+        os.path.join(OUTPUTDIR,"bowtie","sam","{file_id}.cleaned")
+    params:
+        file_id="{file_id}",
+        samfile = os.path.join(OUTPUTDIR,"bowtie","sam","{file_id}.sam")
+    shell:
+        """
+        var_id={params.file_id}
+        echo "SAMtools run complete and converted to BAM file for id:$var_id" > {output}
+        rm {params.samfile}
+        """
+        
+rule genomecov:
+    input:
+        sorted_bam = os.path.join(OUTPUTDIR,"bowtie","bam","{file_id}.sorted.bam")
+    output:
+        aligned_out = os.path.join(OUTPUTDIR,"bedtools","{file_id}_aln.bam")
+    log:
+        err = os.path.join(OUTPUTDIR,"logs","bedtools","{file_id}.err"),
+        out = os.path.join(OUTPUTDIR,"logs","bedtools","{file_id}.out")
+    conda:
+        "envs/bowtie-env.yaml"
+    shell:
+        '''
+        bedtools genomecov -ibam {input.sorted_bam} -bga > {output.aligned_out} 2> {log.err} 1> {log.out}
+        '''
+        
+rule samcov:
+    input:
+        sorted_bam = os.path.join(OUTPUTDIR,"bowtie","bam","{file_id}.sorted.bam")
+    output:
+        aligned_sam = os.path.join(OUTPUTDIR,"coverage","{file_id}.cov")
+    log:
+        err = os.path.join(OUTPUTDIR,"logs","coverage","{file_id}.err"),
+        out = os.path.join(OUTPUTDIR,"logs","coverage","{file_id}.out")
+    params:
+        sorted_bam = os.path.join(OUTPUTDIR,"bowtie","bam","{file_id}.sorted.bam")
+    #conda:
+    #    "envs/bowtie-env.yaml"
+    shell:
+        '''
+        samtools coverage {params.sorted_bam} > {output.aligned_sam} 2> {log.err} 1> {log.out}
+        '''
+
+rule select_eukulele:
+    input:
+        eukulele_done = os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                                     "phaeo_all","taxonomy_estimation","proteins-estimated-taxonomy.out")
+    output:
+        phaeo_contigs = os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs-old","{tara_assembly_name}",
+                                     "phaeo_contigs.txt")
+    run:
+        eukulele_file=pd.read_csv(input.eukulele_done,sep="\t")
+        eukulele_file["transcript_name_edit"] = ["_".join(str(curr).split("_")[:-1]) for curr in eukulele_file["transcript_name"]]
+        eukulele_file = eukulele_file.loc[[("Phaeocystis" in str(curr).strip()) for curr in eukulele_file.full_classification],:]
+        with open(output.phaeo_contigs,"w") as f:
+            for curr in eukulele_file.transcript_name_edit:
+                f.write(curr+"\n")
+
+rule select_eukulele_euk:
+    input:
+        eukulele_done = os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                                     "phaeo_all","taxonomy_estimation","proteins-estimated-taxonomy.out")
+    output:
+        euk_contigs = os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","{tara_assembly_name}",
+                                     "phaeo_contigs.headers.txt")
+    shell:
+        """
+        cat {input.eukulele_done} | rg "Eukaryota" | cut -d$'\t' -f 2 | rev | cut -d'_' -f 2- | rev > {output.euk_contigs}
+        """
+        
+rule filter_from_eukulele_euk:
+    input:
+        euk_contigs = os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","{tara_assembly_name}",
+                                     "phaeo_contigs.headers.txt"),
+        assembly = os.path.join(OUTPUTDIR,"EUKulele_assembly_mapping","{tara_assembly_name}",
+                                     "phaeo_all","taxonomy_estimation","proteins-estimated-taxonomy.out")
+    output:
+        euk_contigs = os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","{tara_assembly_name}",
+                                     "phaeo_contigs.txt")
+    shell:
+        """
+        rg -f {input.euk_contigs} {input.assembly} | cut -c 2- > {output.euk_contigs}
+        """
+        
+rule filter_from_eukulele:
+    input:
+        phaeo_seqs = os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","{tara_assembly_name}",
+                                     "phaeo_contigs.headers.txt"),
+        assembly = os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/megahit/","{tara_assembly_name}", "final.contigs.fa")
+    output:
+        phaeo_contigs = os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","{tara_assembly_name}",
+                                     "phaeo_contigs.fasta")
+    conda:
+        "envs/coverm-env.yaml"
+    shell:
+        """
+        seqtk subseq {input.assembly} {input.phaeo_seqs} > {output.phaeo_contigs}
+        """
+
+rule run_coverm:
+    input:
+        phaeo_contigs = os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","{tara_assembly_name}",
+                                     "phaeo_contigs.fasta"),
+        raw1 = lambda filename: expand(os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/trimmed/PRJEB4352","{raw_file_id}" + "_1.trimmed.fastq.gz"), raw_file_id = get_file_ids(filename.tara_assembly_name)),
+        raw2 = lambda filename: expand(os.path.join("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/trimmed/PRJEB4352","{raw_file_id}" + "_2.trimmed.fastq.gz"), raw_file_id = get_file_ids(filename.tara_assembly_name))
+    output:
+        cover_m_out = os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","{tara_assembly_name}",
+                                     "coverm","phaeo_abund.out")
+    params:
+        temp_dedup_file = os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","TEMP","{tara_assembly_name}",
+                                     "phaeo_contigs.dedup.fasta"),
+        tmp_fold = os.path.join(SCRATCHDIR,"2022-euk-diversity-phaeo-contigs","TEMP","{tara_assembly_name}")
+    conda:
+        "envs/coverm-env.yaml"
+    shell:
+        """
+        mkdir -p {params.tmp_fold}
+        awk 'BEGIN {{i = 1;}} {{ if ($1 ~ /^>/) {{ tmp = h[i]; h[i] = $1; }} else if (!a[$1]) {{ s[i] = $1; a[$1] = "1"; i++; }} else {{ h[i] = tmp; }} }} END {{ for (j = 1; j < i; j++) {{ print h[j]; print s[j]; }} }}' < {input.phaeo_contigs} > {params.temp_dedup_file}
+        coverm contig --methods mean rpkm tpm --min-covered-fraction 0 --reference {params.temp_dedup_file} -1 {input.raw1} -2 {input.raw2} -t 10 -o {output.cover_m_out}
+        """

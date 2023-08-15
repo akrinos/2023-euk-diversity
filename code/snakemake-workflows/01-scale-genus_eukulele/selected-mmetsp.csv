@@ -1,0 +1,24 @@
+short_name,path,organism,strain
+MMETSP0595,/vortexfs1/omics/alexander/data/mmetsp/MMETSP0595_clean.pep.fa,Isochrysis galbana,CCMP1324
+MMETSP0943,/vortexfs1/omics/alexander/data/mmetsp/MMETSP0943_clean.pep.fa,Isochrysis galbana,CCMP1324
+MMETSP0943,/vortexfs1/omics/alexander/data/mmetsp/MMETSP0943_clean.pep.fa,Isochrysis galbana,CCMP1324
+MMETSP1363,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1363_clean.pep.fa,Gephyrocapsa oceanica,RCC1303
+MMETSP1364,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1364_clean.pep.fa,Gephyrocapsa oceanica,RCC1303
+MMETSP1365,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1365_clean.pep.fa,Gephyrocapsa oceanica,RCC1303
+MMETSP1366,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1366_clean.pep.fa,Gephyrocapsa oceanica,RCC1303
+MMETSP1154,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1154_clean.pep.fa,Emiliania huxleyi,CCMP370
+MMETSP1155,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1155_clean.pep.fa,Emiliania huxleyi,CCMP370
+MMETSP1156,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1156_clean.pep.fa,Emiliania huxleyi,CCMP370
+MMETSP1157,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1157_clean.pep.fa,Emiliania huxleyi,CCMP370
+MMETSP1006,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1006_clean.pep.fa,Emiliania huxleyi,CCMP374
+MMETSP1007,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1007_clean.pep.fa,Emiliania huxleyi,CCMP374
+MMETSP1008,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1008_clean.pep.fa,Emiliania huxleyi,CCMP374
+MMETSP1009,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1009_clean.pep.fa,Emiliania huxleyi,CCMP374
+MMETSP0994,/vortexfs1/omics/alexander/data/mmetsp/MMETSP0994_clean.pep.fa,Emiliania huxleyi,CCMP379
+MMETSP0995,/vortexfs1/omics/alexander/data/mmetsp/MMETSP0995_clean.pep.fa,Emiliania huxleyi,CCMP379
+MMETSP0996,/vortexfs1/omics/alexander/data/mmetsp/MMETSP0996_clean.pep.fa,Emiliania huxleyi,CCMP379
+MMETSP0997,/vortexfs1/omics/alexander/data/mmetsp/MMETSP0997_clean.pep.fa,Emiliania huxleyi,CCMP379
+MMETSP1150,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1150_clean.pep.fa,Emiliania huxleyi,PLYM219
+MMETSP1151,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1151_clean.pep.fa,Emiliania huxleyi,PLYM219
+MMETSP1152,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1152_clean.pep.fa,Emiliania huxleyi,PLYM219
+MMETSP1153,/vortexfs1/omics/alexander/data/mmetsp/MMETSP1153_clean.pep.fa,Emiliania huxleyi,PLYM219

@@ -1,0 +1,98 @@
+import os
+import pandas as pd
+import numpy as np
+import glob
+from Bio import SeqIO
+from pathlib import Path
+
+INPUTDIR = "/vortexfs1/omics/alexander/data/TARA/PRJEB4352/" #"download-data-snake/tara-metag/protist"
+OUTPUTDIR = "../../../output/tara-eukulele-mapping"
+SCRATCHDIR="/vortexfs1/scratch/akrinos"
+
+phaeo_entries = pd.read_csv("selected-phaeo.tsv",sep="\t")
+phaeo_unique = phaeo_entries["Source_ID"]
+phaeo_grouped = dict({"colonies":["P_antarctica_caron",
+                                  "P_antarctica_ccmp1374",
+                                  "P_globosa_ccmp1528",
+                                  "P_sp_ccmp2710",
+                                  "P_pouchetii_CCB"],
+                                  "free":["P_cordata_ccmp3104","P_jahnii_ccmp2496",
+                                          "P_rex_ccmp2000"]})
+
+other_mmetsp_entries = pd.read_csv("../eukulele-remap-NB/marmmetsp/tax-table.txt",sep="\t")
+other_mmetsp_entries = other_mmetsp_entries.loc[[("Phaeocystis" not in curr) for curr in other_mmetsp_entries.Genus],:]
+mmetsp_ids = list(set(other_mmetsp_entries.loc[[("MMETSP" in curr) for curr in other_mmetsp_entries.Source_ID],"Source_ID"]))
+
+combined_tax_file = pd.concat([other_mmetsp_entries,phaeo_entries])
+#combined_tax_file.to_csv("combined_tax_file.tsv",sep="\t")
+
+tara_metadata = pd.read_csv("BEST_tara_metadata.csv")
+tara_metadata = tara_metadata.loc[[";" in str(curr) for curr in list(tara_metadata["Uniform resource locator/link to metadata file"])],:]
+run_accessions = tara_metadata["Analysis ID"]
+input_data = [curr.split("_")[0] for curr in glob.glob(INPUTDIR +'**/*.fastq.gz', recursive=True)]
+run_accessions=[f for f in run_accessions if (f!="")&((input_data.count(f)==2))]
+
+tara_assemblies = [curr for curr in os.listdir("/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/") if ("-all-" in curr) & ("ZZZ" not in curr)]# if\
+                   #("NAO" in curr) | ("SO" in curr)]
+ALIASES = tara_assemblies
+tara_raw_files = pd.read_csv("PRJEB4352_metaG_wenv_PE.txt",sep="\t")
+ocean_layer = [curr.split("_")[2] if len(curr.split("_"))>2 else curr for curr in tara_raw_files["Sample material"]]
+size_fraction = [curr.split("_")[-1] for curr in tara_raw_files["Sample material"]]
+size_fraction = ["0.8-5" if curr=="0.8-3" else curr for curr in size_fraction]
+ocean = [curr.split("[")[-1].split("]")[0] for curr in tara_raw_files["OS region"]]
+combined_labels = [ocean+"-all-"+layer+"-"+sizefrac+".00" for ocean,layer,sizefrac in zip(ocean,ocean_layer,size_fraction)]
+run_accessions =  tara_raw_files["run_accession"]
+print(combined_labels,flush=True)
+raw_file_dict = dict()
+for curr,curr_acc in zip(combined_labels,run_accessions):
+    if curr in raw_file_dict:
+        raw_file_dict[curr].append(curr_acc)
+    else:
+        raw_file_dict[curr] = [curr_acc]
+
+def get_file_ids(tara_assembly_in):
+    return raw_file_dict[tara_assembly_in]
+
+def get_raw_files_commas(tara_assembly_in,left_or_right="left"):
+    if left_or_right=="left":
+        return ",".join(["/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/trimmed/PRJEB4352/" + curr + "_1.trimmed.fastq.gz" for curr in get_file_ids(tara_assembly_in)])
+    
+    return ",".join(["/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/trimmed/PRJEB4352/" + curr + "_2.trimmed.fastq.gz" for curr in get_file_ids(tara_assembly_in)])
+    
+OUTPUTDIR="phaeo_eggnog_mapper"
+EGGNOG_DATA_DIR="/vortexfs1/omics/alexander/data/databases/eggnog-mapper-data/"
+download_data=False
+if not os.path.isfile(os.path.join(EGGNOG_DATA_DIR,"eggnog_proteins.dmnd")):
+    download_data=True
+    
+def get_source_ids(grouping):
+    return phaeo_grouped[grouping]
+
+rule all:
+    input:
+        eggnog_mapped=expand(os.path.join(OUTPUTDIR, 
+                     "{tara_id}.emapper.hits"),tara_id=tara_assemblies)
+
+rule eggnog_mapped:
+    input:
+        phaeo_file = "/vortexfs1/omics/alexander/data/TARA/PRJEB4352-snakmake-output/prodigal/{tara_id}/proteins.faa",
+    output:
+        hits_file = os.path.join(OUTPUTDIR, 
+                     "{tara_id}.emapper.hits")
+    params:
+        prefix = "{tara_id}",
+        outdir = OUTPUTDIR,
+        tmpdir = os.path.join("temp_files","tmp_{tara_id}"),
+        eggnog_mapper_data = EGGNOG_DATA_DIR,
+        download_data = download_data
+    shell:
+        '''
+        if [ {params.download_data} == "True" ]; then
+            mkdir -p {params.eggnog_mapper_data}
+            download_eggnog_data.py -y --data_dir {params.eggnog_mapper_data}
+        fi
+        mkdir -p {params.outdir}
+        mkdir -p {params.tmpdir}
+        export EGGNOG_DATA_DIR={params.eggnog_mapper_data}
+        emapper.py --override -i {input.phaeo_file} --itype proteins -m diamond -o {params.prefix} --output_dir {params.outdir} --temp_dir {params.tmpdir}
+        '''

@@ -1,0 +1,250 @@
+import os
+import pandas as pd 
+import numpy as np
+
+input_dir = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_trials_September21"
+
+folders_touse = [curr for curr in os.listdir(input_dir) if ("jEUKebox" in curr)]# & (curr != "jEUKebox-Trial2-CommB")]
+types_out = ["designer", "CAG", "MAD"]
+                 
+designer_names = ["designer_assembly_" + str(curr) for curr in list(range(1,7))]
+sim_names = ["sim_raw_reads_" + str(curr) for curr in list(range(1,7))]
+assemblers = ["trinity","spades","rnaspades","megahit"]
+
+## NARRAGANSETT BAY OUTPUT PROCESSING
+input_dir = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_narragansett"
+output_dir = "narragansett-LCA-better-diatom-taxonomy"
+DATAFILE = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic/input/NB_table.txt"
+SAMPLEINFO = pd.read_csv(DATAFILE, sep = "\t")
+assemblygroups = list(set(SAMPLEINFO.AssemblyGroup))
+input_tax="/vortexfs1/omics/alexander/akrinos/remodeling/EUKulele/databases/marmmetsp_better_diatom_taxonomy/tax-table.txt"
+
+tax_level = "family"
+## evaluate process of clustering with tax coherence.
+tax_table = pd.read_csv(input_tax,sep="\t")
+tax_table.columns = [curr.lower() for curr in tax_table.columns]
+
+tax_table["domain"] = [str(curr).strip() for curr in tax_table.domain]
+tax_table["supergroup"] = [str(curr).strip() for curr in tax_table.supergroup]
+tax_table["division"] = [str(curr).strip() for curr in tax_table.division]
+tax_table["class"] = [str(curr).strip() for curr in tax_table["class"]]
+tax_table["order"] = [str(curr).strip() for curr in tax_table.order]
+tax_table["family"] = [str(curr).strip() for curr in tax_table.family]
+tax_table["genus"] = [str(curr).strip() for curr in tax_table.genus]
+tax_table["species"] = [str(curr).strip() for curr in tax_table.species]
+
+families_with_space = list(set(tax_table["family"]))
+
+families = [str(curr).replace(" ","_") for curr in list(set(tax_table["family"]))]
+fam_space_dict=dict(zip(families,families_with_space))
+def get_with_space(family):
+    return fam_space_dict[family]
+
+rule all:
+    input:
+        eukulele_out = expand(os.path.join(output_dir, "EUKulele_CAG_{database}_LCA{cutoff}",
+                             "taxonomy_estimation", "{descript_curr}_merged-estimated-taxonomy.out"), 
+               type_curr = types_out, descript_curr = assemblygroups,
+               database=["marmmetsp"],#,"phylodb"],
+               cutoff = [1,0.99,0.98,0.97,0.95,0.90,0.80]),
+        #nb_to_self = os.path.join("../../../output/narragansett_self","pep_diamond_matches","MAD-hits-db.out"),
+        #nb_to_self_prot = os.path.join("../../../output/narragansett_self","pep_diamond_matches","MAD-hits-db-prot.out"),
+        #check_bld = os.path.join("../../../output/narragansett_self","sourmash-cmp","touchfornow.txt")
+        #sourmash_csv = os.path.join("../../../output/narragansett_self","sourmash-cmp","MAD.csv"),
+        #family_sourmash_csv = os.path.join("../../../output/narragansett_self","sourmash-cmp","MAD_families.csv")
+
+rule eukulele_merged:
+    input:
+        input_file = os.path.join(input_dir, #"{folder_curr}",
+                                  "intermediate-files", "02-assembly", "06-AGM",
+                                  "{descript_curr}_merged.fasta")
+    output:
+        tax_est = os.path.join(output_dir, "{folder_curr}", "EUKulele_merged",
+                             "taxonomy_estimation", "{descript_curr}_merged-estimated-taxonomy.out")
+    params:
+        prefix = os.path.join(output_dir, "{folder_curr}"),
+        eukulele_dir = "EUKulele_merged",
+        sample_dir = "06-AGM",
+        outdir = os.path.join(output_dir, "{folder_curr}", "EUKulele_merged"),
+        tmpdir = "tmp_{descript_curr}_{folder_curr}"
+    shell:
+        '''
+        EUKulele --sample_dir {params.prefix}/intermediate-files/02-assembly/{params.sample_dir}/ --database marmmetsp -o {params.prefix}/{params.eukulele_dir} --mets_or_mags mets --n_ext .fasta
+        '''
+
+rule eukulele_cag_db:
+    input:
+        input_file = expand(os.path.join(input_dir, #"{folder_curr}",
+                                  "intermediate-files", "03-merge", "07-CAG",
+                                  "{descript_curr}_merged.fasta"), 
+                            descript_curr = assemblygroups)
+    output:
+        tax_est = expand(os.path.join(output_dir, "EUKulele_CAG_{database}_LCA{cutoff}",
+                             "taxonomy_estimation",
+                             "{descript_curr}_merged-estimated-taxonomy.out"), 
+                             descript_curr = assemblygroups,
+                             database = "{database}", cutoff = "{cutoff}")
+    params:
+        prefix = os.path.join(input_dir),
+        eukulele_dir = "EUKulele_CAG_{database}_LCA{cutoff}",
+        sample_dir = "07-CAG",
+        database = "{database}",
+        cutoff = "{cutoff}",
+        outdir = os.path.join(output_dir, "EUKulele_CAG_{database}_LCA{cutoff}")
+    shell:
+        '''
+        EUKulele --sample_dir {params.prefix}/intermediate-files/03-merge/{params.sample_dir}/ --reference_dir /vortexfs1/omics/alexander/data/databases/marmmetsp-5Dec2022 --consensus_proportion {params.cutoff} --no_busco -o {params.outdir} --mets_or_mags mets --n_ext .fasta
+    
+        #EUKulele --sample_dir {params.prefix}/intermediate-files/03-merge/{params.sample_dir}/ --database {params.database} --consensus_proportion {params.cutoff} --no_busco -o {params.outdir} --mets_or_mags mets --n_ext .fasta
+        '''
+   
+rule eukulele_cag:
+    input:
+        input_file = expand(os.path.join(input_dir, #"{folder_curr}",
+                                  "intermediate-files", "03-merge", "07-CAG",
+                                  "{descript_curr}_merged.fasta"), descript_curr = assemblygroups,
+                                  folder_curr = "{folder_curr}")
+    output:
+        tax_est = expand(os.path.join(output_dir, "EUKulele_merged_CAG",
+                             "taxonomy_estimation", "{descript_curr}_merged-estimated-taxonomy.out"), 
+                             descript_curr = assemblygroups)
+    params:
+        prefix = os.path.join(output_dir), #"{folder_curr}"),
+        eukulele_dir = "EUKulele_merged",
+        sample_dir = "07-CAG",
+        outdir = os.path.join(output_dir, "EUKulele_merged")
+    shell:
+        '''
+        EUKulele --sample_dir {params.prefix}/intermediate-files/03-merge/{params.sample_dir}/ --database marmmetsp -o {params.prefix}/{params.eukulele_dir} --mets_or_mags mets --n_ext .fasta
+        '''
+
+rule eukulele_assembler:
+    input:
+        input_file = os.path.join(input_dir,# "{folder_curr}",
+                                  "intermediate-files", "02-assembly", "05-assembly",
+                                  "{descript_curr}_{assembler}_renamed.fasta")
+    output:
+        tax_est = os.path.join(output_dir, #"{folder_curr}", 
+                             "EUKulele_assemblers", "EUKulele_{assembler}",
+                             "taxonomy_estimation", "{descript_curr}-estimated-taxonomy.out")
+    params:
+        prefix = os.path.join(output_dir),# "{folder_curr}"),
+        eukulele_dir = "EUKulele_merged",
+        tmp_dir = os.path.join("{descript_curr}_{assembler}"),
+        sample_dir = os.path.join("02-assembly","05-assembly"),
+        outdir = os.path.join(output_dir, "EUKulele_assemblers", "EUKulele_{assembler}"),
+        tmpdir = "tmp_{descript_curr}"
+    shell:
+        '''
+        mkdir -p {params.tmp_dir}
+        cp {input.input_file} {params.tmp_dir}
+        EUKulele --sample_dir {params.tmp_dir} --database marmmetsp -o {params.outdir} --mets_or_mags mets --n_ext .fasta
+        '''
+
+rule eukulele_CAG:
+    input:
+        input_file = os.path.join(input_dir, "{folder_curr}",
+                                  "eukrhythmic_assembly", "intermediate-files", "03-merge", "07-CAG",
+                                  "{descript_curr}_merged.fasta")
+    output:
+        tax_est = os.path.join(output_dir, "{folder_curr}", "EUKulele_CAG_newnames",
+                             "taxonomy_estimation", "{descript_curr}_merged-estimated-taxonomy.out")
+    params:
+        prefix = os.path.join(output_dir, "{folder_curr}"),
+        eukulele_dir = "EUKulele_CAG_newnames",
+        sample_dir = "07-CAG",
+        outdir = os.path.join(output_dir, "{folder_curr}", "EUKulele_CAG_newnames"),
+        tmpdir = "tmp_{descript_curr}_{folder_curr}_designer"
+    shell:
+        '''
+        EUKulele --sample_dir {params.prefix}/eukrhythmic_assembly/intermediate-files/03-merge/{params.sample_dir}/ --database marmmetsp -o {params.prefix}/{params.eukulele_dir} --mets_or_mags mets --n_ext .fasta 2> /dev/null
+        '''
+
+rule blast_against_nb:
+    input:
+        input_file = os.path.join(input_dir,"intermediate-files","03-merge","12-MAD","MAD.fasta")
+    output:
+        nt_database = temp(os.path.join("../../../output/narragansett_self","pep_diamond_db","MAD.pep")),
+        nt_db_out = os.path.join("../../../output/narragansett_self","pep_diamond_matches","MAD-hits-db.out")
+    shell:
+        """
+        makeblastdb -in {input.input_file} -dbtype nucl -parse_seqids -out {output.nt_database} -title "MAD"
+        blastn -db {output.nt_database} -query {input.input_file} -out {output.nt_db_out} -evalue 1e-50
+        """
+
+rule blast_against_nb_proteins:
+    input:
+        input_file = os.path.join(input_dir,"intermediate-files","03-merge","12-MAD","MAD.fasta")
+    output:
+        prot_database = temp(os.path.join("../../../output/narragansett_self","pep_diamond_db","MAD.pep")),
+        prot_db_out = os.path.join("../../../output/narragansett_self","pep_diamond_matches","MAD-hits-db.out")
+    shell:
+        """
+        makeblastdb -in {input.input_file} -dbtype nucl -parse_seqids -out {output.nt_database} -title "MAD"
+        blastn -db {output.nt_database} -query {input.input_file} -out {output.nt_db_out} -evalue 1e-50
+        """
+        
+#diamond blastp -d {output.protein_database} -q {input.input_file} -o {output.protein_db_out} --min-score 50
+rule sourmash_against_build:
+    input:
+        input_file = os.path.join(input_dir,"intermediate-files","03-merge","12-MAD","MAD.nospace.fasta")
+    output:
+        sourmash_sig = os.path.join("../../../output/narragansett_self","sourmash-sigs","MAD.sig")
+    shell:
+        """
+        sourmash sketch dna --name-from-first -p scaled=1000,k=21,k=31,k=51 {input.input_file} --singleton -o {output.sourmash_sig}
+        """
+        
+rule sourmash_against_nb:
+    input:
+        input_file = os.path.join(input_dir,"intermediate-files","03-merge","12-MAD","MAD.nospace.fasta"),
+        sourmash_sig = os.path.join("../../../output/narragansett_self","sourmash-sigs","MAD.sig")
+    output:
+        sourmash_csv = os.path.join("../../../output/narragansett_self","sourmash-cmp","touchfornow.txt")
+    params:
+        output_dir = os.path.join("../../../output/narragansett_self","sourmash-sigs"),
+        sourmash_csv = os.path.join("../../../output/narragansett_self","sourmash-cmp","MAD.csv")
+    shell:
+        """
+        sourmash sig split {input.sourmash_sig} --outdir {params.output_dir}
+        touch {output.sourmash_csv}
+        #sourmash compare -k 31 --csv {params.sourmash_csv} {input.sourmash_sig}
+        """
+        
+rule create_fam_list_file:
+    input:
+        input_file = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.fa"
+    output:
+        family_file = temp(os.path.join("../../../output/narragansett_self","family_files","{family}.txt"))
+    params:
+        family = lambda filename: get_with_space(filename.family)
+    run:
+        source_ids = tax_table.loc[tax_table.family==params.family,"source_id"]
+        with open(output.family_file,"w") as f:
+            f.write("\n".join(list(source_ids)))
+            
+rule sourmash_against_build_fams:
+    input:
+        input_file = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.fa",
+        family_file = os.path.join("../../../output/narragansett_self","family_files","{family}.txt")
+    output:
+        family_headers = temp(os.path.join("../../../output/narragansett_self","family_files","{family}_headers.txt")),
+        family_seqs = temp(os.path.join("../../../output/narragansett_self","family_files","{family}.fasta")),
+        sourmash_sig = os.path.join("../../../output/narragansett_self","sourmash-sigs","MAD_{family}.sig")
+    shell:
+        """
+        cat {input.input_file} | rg -f {input.family_file} | cut -d">" -f 2- > {output.family_headers}
+        seqtk subseq {input.input_file} {output.family_headers} > {output.family_seqs}
+        sourmash sketch dna -p scaled=1000,k=31 {output.family_seqs} --singleton -o {output.sourmash_sig}
+        touch {output.sourmash_sig}
+        """
+
+rule sourmash_compare_fams:
+    input:
+        sourmash_sig = expand(os.path.join("../../../output/narragansett_self","sourmash-sigs","MAD_{family}.sig"),family=families)
+    output:
+        sourmash_csv = os.path.join("../../../output/narragansett_self","sourmash-cmp","MAD_families.csv")
+    shell:
+        """
+        sourmash compare -k 31 --csv {output.sourmash_csv} {input.sourmash_sig}
+        """

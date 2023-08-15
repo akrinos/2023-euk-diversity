@@ -1,0 +1,80 @@
+import os
+import pandas as pd
+import numpy as np
+
+OUTPUTDIR="bats-workflow"
+
+radiolarian_list = ["/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00491_Sticholonche_zanclea.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00492_Amphilonche_elongata.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00493_Phyllostaurus_siculus.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00494_Astrolonche_serrata.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00495_Collozoum_sp_1-RS-2012.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00496_Lithomelissa_setosa.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00497_Spongosphaera_streptacantha.fasta"]
+
+rule all:
+    input:
+        deepclust_rad = os.path.join(OUTPUTDIR,"mmetsp_radiolaria_deepclust.mad.20.out"),
+        deepclust = os.path.join(OUTPUTDIR,"mmetsp_deepclust.mad.20.out"),
+        deepclust_rad_50 = os.path.join(OUTPUTDIR,"mmetsp_radiolaria_deepclust.mad.50.out"),
+        deepclust_50 = os.path.join(OUTPUTDIR,"mmetsp_deepclust.mad.50.out")
+        
+rule bats_mmetsp_deepclust:
+    input:
+        marmmetsp = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa",
+        mad = "/vortexfs1/omics/saito/BATS2019-clio-metaT/eukrhythmic_output/transdecoder_mega_merge_finalproteins/merged.fasta.transdecoder.pep"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"mmetsp_deepclust.mad.20.out")
+    shell:
+        """
+        temp_file="temp_file_out.pep.full.fa"
+        cat {input.marmmetsp} {input.mad} > $temp_file
+        ../diamond deepclust -d $temp_file -o {output.deepclust} --member-cover 20
+        rm $temp_file
+        """
+
+rule bats_mmetsp_deepclust_50:
+    input:
+        marmmetsp = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa",
+        mad = "/vortexfs1/omics/saito/BATS2019-clio-metaT/eukrhythmic_output/transdecoder_mega_merge_finalproteins/merged.fasta.transdecoder.pep"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"mmetsp_deepclust.mad.50.out")
+    shell:
+        """
+        temp_file="temp_file_out.pep.full.fa"
+        cat {input.marmmetsp} {input.mad} > $temp_file
+        ../diamond deepclust -d $temp_file -o {output.deepclust} --member-cover 50
+        rm $temp_file
+        """
+
+rule bats_mmetsp_plus_rhizaria_deepclust_50:
+    input:
+        marmmetsp = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa",
+        mad = "/vortexfs1/omics/saito/BATS2019-clio-metaT/eukrhythmic_output/transdecoder_mega_merge_finalproteins/merged.fasta.transdecoder.pep"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"mmetsp_radiolaria_deepclust.mad.50.out")
+    params:
+        radiolarian_list = " ".join(radiolarian_list)
+    shell:
+        """
+        temp_file="temp_file_out.pep.fa"
+        cat {input.marmmetsp} {input.mad} {params.radiolarian_list} > $temp_file
+        ../diamond deepclust -M 150G -d $temp_file -o {output.deepclust} --member-cover 50
+        rm $temp_file
+        """
+
+rule bats_mmetsp_plus_rhizaria_deepclust:
+    input:
+        marmmetsp = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa",
+        mad = "/vortexfs1/omics/saito/BATS2019-clio-metaT/eukrhythmic_output/transdecoder_mega_merge_finalproteins/merged.fasta.transdecoder.pep"
+    output:
+        deepclust = os.path.join(OUTPUTDIR,"mmetsp_radiolaria_deepclust.mad.20.out")
+    params:
+        radiolarian_list = " ".join(radiolarian_list)
+    shell:
+        """
+        temp_file="temp_file_out.pep.fa"
+        cat {input.marmmetsp} {input.mad} {params.radiolarian_list} > $temp_file
+        ../diamond deepclust -M 150G -d $temp_file -o {output.deepclust} --member-cover 20
+        rm $temp_file
+        """

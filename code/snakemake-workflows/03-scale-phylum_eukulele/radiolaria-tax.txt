@@ -1,0 +1,8 @@
+Source_ID,Domain,Supergroup,Division,Class,Order,Family,Genus,Species
+EP00491_Sticholonche_zanclea,Eukaryota,Rhizaria,Retaria,Radiolaria,Taxopodida,Taxopodida,Sticholonche,Sticholonche zanclea
+EP00492_Amphilonche_elongata,Eukaryota,Rhizaria,Retaria,Radiolaria,Acantharea,Acantharea,Amphilonche,Amphilonche elongata
+EP00493_Phyllostaurus_siculus,Eukaryota,Rhizaria,Retaria,Radiolaria,Acantharea,Acantharea,Phyllostaurus,Phyllostaurus siculu
+EP00494_Astrolonche_serrata,Eukaryota,Rhizaria,Retaria,Radiolaria,Acantharea,Acantharea,Astrolonche,Astrolonche serrata
+EP00495_Collozoum_sp_1-RS-2012,Eukaryota,Rhizaria,Retaria,Radiolaria,Collodaria,Sphaerozoidae,Collozoum,Collozoum strain 1-RS-2012
+EP00496_Lithomelissa_setosa,Eukaryota,Rhizaria,Retaria,Radiolaria,CN clade,Plagiacanthoidea,Lithomelissa,Lithomelissa setosa
+EP00497_Spongosphaera_streptacantha,Eukaryota,Rhizaria,Retaria,Radiolaria,Spumellaria,S clade I,Spongosphaera,Spongosphaera streptacantha

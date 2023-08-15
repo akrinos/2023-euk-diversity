@@ -1,0 +1,14 @@
+	Domain	Supergroup	Division	Class	Order	Family	Genus	Species	Source_ID
+0	Eukaryota	Hacrobia	Haptophyta	Coccolithophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis antarctica	P_antarctica_caron
+1	Eukaryota	Hacrobia	Haptophyta	Coccolithophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis antarctica	P_ant_jgi
+2	Eukaryota	Hacrobia	Haptophyta	Coccolithophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis antarctica	P_antarctica_ccmp1374
+3	Eukaryota	Hacrobia	Haptophyta	Coccolithophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis cordata	P_cordata_ccmp3104
+4	Eukaryota	Hacrobia	Haptophyta	Coccolithophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis globosa	P_globosa_ccmp1528
+5	Eukaryota	Hacrobia	Haptophyta	Coccolithophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis globosa	P_globosa_jgi
+6	Eukaryota	Hacrobia	Haptophyta	Coccolithophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis jahnii	P_jahnii_ccmp2496
+7	Eukaryota	Hacrobia	Haptophyta	Coccolithophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis rex	P_rex_ccmp2000
+8	Eukaryota	Hacrobia	Haptophyta	Coccolithophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis sp.	P_sp_ccmp2710
+9	Eukaryota	Hacrobia	Haptophyta	Coccolithophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis pouchetii	P_pouchetii_CCB
+0	Eukaryota	Hacrobia	Haptophyta	Prymnesiophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis antarctica	P_antarctica_caron
+1	Eukaryota	Hacrobia	Haptophyta	Prymnesiophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis antarctica	P_ant_jgi
+2	Eukaryota	Hacrobia	Haptophyta	Prymnesiophyceae	Phaeocystales	Phaeocystaceae	Phaeocystis	Phaeocystis antarctica	P_antarctica_ccmp1374

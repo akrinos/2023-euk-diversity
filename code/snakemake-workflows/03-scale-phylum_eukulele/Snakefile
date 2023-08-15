@@ -1,0 +1,202 @@
+import os
+import pandas as pd
+import numpy as np
+
+OUTPUTDIR="bats-eukulele-workflow"
+
+radiolarian_list = ["/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00491_Sticholonche_zanclea.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00492_Amphilonche_elongata.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00493_Phyllostaurus_siculus.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00494_Astrolonche_serrata.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00495_Collozoum_sp_1-RS-2012.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00496_Lithomelissa_setosa.fasta",
+                    "/vortexfs1/omics/alexander/data/euk-prot-db/proteins/EP00497_Spongosphaera_streptacantha.fasta"]
+                    
+other_group_list=pd.read_csv("/vortexfs1/omics/alexander/data/databases/marmmetsp-5Dec2022/tax-table.txt",sep="\t")
+other_group_list=list(other_group_list.loc[other_group_list.Division.isin(["Dinoflagellata","Ochrophyta",
+                                                                           "Cryptophyta","Haptophyta"]),"Source_ID"])
+input_dir = os.path.join("/vortexfs1","omics","alexander","data","databases","marmmetsp-5Dec2022")
+with open("other_grp_list.txt","w") as f:
+    f.write("\n".join(other_group_list))
+
+rule all:
+    input:
+        mmmp = os.path.join(OUTPUTDIR,"marmmetsp_search2","taxonomy_estimation","merged.fasta.transdecoder-estimated-taxonomy.out"),
+        #radiolaria = os.path.join(OUTPUTDIR,"radiolaria_search","taxonomy_estimation","merged.fasta.transdecoder-estimated-taxonomy.out"),
+        db_select = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","reference.pep.fa"),
+        rad_self_annotate = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_self","taxonomy_estimation",
+                            "reference-estimated-taxonomy.out"),
+        tax_nt = os.path.join(OUTPUTDIR,"marmmetsp_search_nt","taxonomy_estimation",
+                    "touch_done.txt"),
+        tax_rad_nt = os.path.join(OUTPUTDIR,"radiolaria_search_nt","taxonomy_estimation",
+                    "touch_done.txt"),
+        dmnd = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_self","diamond-bitscore-50",
+                    "hits-db.tsv")
+
+rule add_source_id:
+    output:
+        os.path.join(OUTPUTDIR,"radiolarian.fasta")
+    params:
+        rad_list = radiolarian_list
+    shell:
+        """
+        for rad_file in {params.rad_list}; do
+            rad_pat=$(echo $rad_file | rev | cut -d"/" -f 1 | rev | cut -d"." -f1)
+            cat $rad_file | sed "/^>/ s/$/ \/SOURCE_ID=$rad_pat/" >> {output}
+        done
+        """
+
+rule create_tax_table:
+    input:
+        radiolaria_tab = "radiolaria-tax.txt",
+        marmmetsp_tab = "/vortexfs1/omics/alexander/data/databases/marmmetsp-5Dec2022/tax-table.txt"
+    output:
+        tax = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","taxonomy-table.txt")
+    run:
+        rad_tab = pd.read_csv(input.radiolaria_tab)
+        marmmetsp_tab = pd.read_csv(input.marmmetsp_tab,sep="\t")
+        pd.concat([marmmetsp_tab,rad_tab]).to_csv(output.tax,sep="\t")
+
+rule filter_mmetsp:
+    input:
+        fa_file = "/vortexfs1/omics/alexander/akrinos/2022-euk-diversity/code/jupyter-notebooks/reference.pep.modids.contigname.fa"
+    output:
+        other_grp_file = "other_group_file.fasta"
+    shell:
+        """
+        headers_tmp_file="other_group_headers.txt"
+        cat {input.fa_file} | rg -f "other_grp_list.txt" | cut -f 2- -d">" > $headers_tmp_file
+        seqtk subseq {input.fa_file} $headers_tmp_file > {output.other_grp_file}
+        #cat {input.fa_file} | rg -f "other_grp_list.txt" > {output.other_grp_file}
+        """
+   
+rule create_database:
+    input:
+        radiolaria_file = os.path.join(OUTPUTDIR,"radiolarian.fasta"),
+        marmmetsp_file = "/vortexfs1/omics/alexander/data/databases/marmmetsp-5Dec2022/reference.pep.fa",
+        tax = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","taxonomy-table.txt")
+    output:
+        ref = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","reference.pep.fa"),
+        prot = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","prot-map.json"),
+        tax = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","tax-table.txt")
+    shell:
+        """
+        combined_fasta={output.ref}
+        cat {input.radiolaria_file} {input.marmmetsp_file} > {output.ref}
+        create_protein_table.py --infile_peptide $combined_fasta --infile_taxonomy {input.tax} --outfile_json {output.prot} --output {output.tax} --delim "/" --col_source_id Source_ID --taxonomy_col_id taxonomy --column SOURCE_ID
+        """
+        
+rule create_database_select:
+    input:
+        radiolaria_file = os.path.join(OUTPUTDIR,"radiolarian.fasta"),
+        marmmetsp_file = "other_group_file.fasta",
+        tax = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","taxonomy-table.txt")
+    output:
+        ref = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","reference.pep.fa"),
+        prot = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","prot-map.json"),
+        tax = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","tax-table.txt")
+    shell:
+        """
+        combined_fasta={output.ref}
+        cat {input.radiolaria_file} {input.marmmetsp_file} > {output.ref}
+        create_protein_table.py --infile_peptide $combined_fasta --infile_taxonomy {input.tax} --outfile_json {output.prot} --output {output.tax} --delim "/" --col_source_id Source_ID --taxonomy_col_id taxonomy --column SOURCE_ID
+        """        
+
+rule diamond_self_annotate:
+    input:
+        ref = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","reference.pep.fa"),
+        prot = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","prot-map.json"),
+        tax = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","tax-table.txt"),
+        dmnd = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","diamond","reference.pep.dmnd")
+    output:
+        dmnd = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_self","diamond-bitscore-50","hits-db.tsv"),
+        ref = temp(os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_self","reference.pep"))
+    shell:
+        """
+        cp {input.ref} {output.ref}
+        diamond blastp -d {input.dmnd} -q {output.ref} -o {output.dmnd} --min-score 50
+        """
+
+rule eukulele_self_annotate:
+    input:
+        ref = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","reference.pep.fa"),
+        prot = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","prot-map.json"),
+        tax = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","tax-table.txt")
+    output:
+        dmnd = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select","diamond","reference.pep.dmnd"),
+        tax = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_self","taxonomy_estimation","reference-estimated-taxonomy.out"),
+        ref = temp(os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_self","reference.pep"))
+    params:
+        ref_dir = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_select"),
+        sample_dir = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_self"),
+        output_dir = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp_self")
+    shell:
+        """
+        cp {input.ref} {output.ref}
+        EUKulele --reference_dir {params.ref_dir} --output_dir {params.output_dir} --sample_dir {params.sample_dir} --mets_or_mags mets --p_ext .pep --consensus_proportion 0.97
+        """
+
+rule eukulele_combo:
+    input:
+        ref = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","reference.pep.fa"),
+        prot = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","prot-map.json"),
+        tax = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","tax-table.txt"),
+        input_file = "/vortexfs1/omics/saito/BATS2019-clio-metaT/eukrhythmic_output/transdecoder_mega_merge_finalproteins/merged.fasta.transdecoder.pep"
+    output:
+        tax = os.path.join(OUTPUTDIR,"radiolaria_search","taxonomy_estimation","merged.fasta.transdecoder-estimated-taxonomy.out")
+    params:
+        ref_dir = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp"),
+        sample_dir = "bats-proteins",
+        output_dir = os.path.join(OUTPUTDIR,"radiolaria_search")
+    shell:
+        """
+        EUKulele --reference_dir {params.ref_dir} --output_dir {params.output_dir} --sample_dir {params.sample_dir} --mets_or_mags mets --p_ext pep --consensus_proportion 0.97
+        """
+        
+rule eukulele_marmmetsp:
+    input:
+        input_file = "/vortexfs1/omics/saito/BATS2019-clio-metaT/eukrhythmic_output/transdecoder_mega_merge_finalproteins/merged.fasta.transdecoder.pep"
+    output:
+        tax = os.path.join(OUTPUTDIR,"marmmetsp_search2","taxonomy_estimation","merged.fasta.transdecoder-estimated-taxonomy.out")
+    params:
+        ref_dir = "/vortexfs1/omics/alexander/data/databases/marmmetsp-5Dec2022",
+        sample_dir = "bats-proteins",
+        output_dir = os.path.join(OUTPUTDIR,"marmmetsp_search2")
+    shell:
+        """
+        EUKulele --reference_dir {params.ref_dir} --output_dir {params.output_dir} --sample_dir {params.sample_dir} --mets_or_mags mets --p_ext pep --consensus_proportion 0.97
+        """
+
+
+rule eukulele_combo_nt:
+    input:
+        ref = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","reference.pep.fa"),
+        prot = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","prot-map.json"),
+        tax = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp","tax-table.txt"),
+        input_file = "/vortexfs1/omics/saito/BATS2019-clio-metaT/eukrhythmic_output/cluster_mega_merge/EUKulele/merged_merged.fasta.gz"
+    output:
+        tax = os.path.join(OUTPUTDIR,"radiolaria_search_nt","taxonomy_estimation","touch_done.txt")
+    params:
+        ref_dir = os.path.join(OUTPUTDIR,"radiolaria_marmmetsp"),
+        sample_dir = "/vortexfs1/omics/saito/BATS2019-clio-metaT/eukrhythmic_output/cluster_mega_merge/EUKulele",
+        output_dir = os.path.join(OUTPUTDIR,"radiolaria_search_nt")
+    shell:
+        """
+        EUKulele --reference_dir {params.ref_dir} --output_dir {params.output_dir} --sample_dir {params.sample_dir} --mets_or_mags mets --n_ext .gz --consensus_proportion 0.97
+        touch {output.tax}
+        """
+        
+rule eukulele_marmmetsp_nt:
+    input:
+        input_file = "/vortexfs1/omics/saito/BATS2019-clio-metaT/eukrhythmic_output/cluster_mega_merge/EUKulele/merged_merged.fasta.gz"
+    output:
+        tax = os.path.join(OUTPUTDIR,"marmmetsp_search_nt","taxonomy_estimation","touch_done.txt")
+    params:
+        ref_dir = "/vortexfs1/omics/alexander/data/databases/marmmetsp-5Dec2022",
+        sample_dir = "/vortexfs1/omics/saito/BATS2019-clio-metaT/eukrhythmic_output/cluster_mega_merge/EUKulele",
+        output_dir = os.path.join(OUTPUTDIR,"marmmetsp_search_nt")
+    shell:
+        """
+        EUKulele --reference_dir {params.ref_dir} --output_dir {params.output_dir} --sample_dir {params.sample_dir} --mets_or_mags mets --n_ext .gz --consensus_proportion 0.97
+        touch {output.tax}
+        """
